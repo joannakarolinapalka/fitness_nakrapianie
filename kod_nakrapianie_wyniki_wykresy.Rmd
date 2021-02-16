@@ -1,0 +1,251 @@
+---
+title: "Wyniki fitness z ..."
+author: "Joanna_Palka"
+date: "04 02 2021"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+Import danych z nakrapania
+```{r, include=F}
+#tak jak wczesniej, najpierw wgrywamy potrzebne paczki, jesli ich nie mamy to instalujemu funkcja install.packages()
+library(dplyr)
+library(tidyr)
+library(ggpubr)
+library(tidyverse)
+#1. ustawiamy srodowisko pracy w miejsce wktorym przechowywujemy pliki z naszymi danymi
+#wazne! plik z danymi fitnessowymi, danymi z nakrapiania jak i kody musza znajdowac sie w jednym miejscu, 
+#jesli tak nie jest nalezy podczaj kroku z importem podac cala sciezke do naszych danych
+#jesli kod i oba pliki znajduja sie w tym samym miescu nie trzeba podawac setwd
+
+#setwd("C:/Users/joann/Desktop/doktorat/eksperyment_fitness_nowy/blok_2/cz_1")
+
+#tu jsli istnieje taka potrzeba zmieniamy nazwe pliku
+Dane_nakrapianie<-read.csv2(file="licznosci_klas_nakrapianie.csv")
+
+Dane_nakrapianie<-Dane_nakrapianie[,-1]
+
+#Wycinanie z nazwy pliku kodu probki i zapisywanie jej w nowej kolumnie tabeli z danymi.
+#Uwaga: z nazwy pliku sa wycinane pozycje 2-4, wiec to zadziala tylko jeşli 
+#nazwa ma taki format, a kod sklada sie˘ z trzech znakow, od 2 do 4 pozycji.
+populacja<-sapply(Dane_nakrapianie[,"nazwa.pliku"],substr,start=1,stop=4)
+
+#zeby pozbyc sie niepotrzebnej _, jesli nie ma tego problemu, to zakomentowac
+populacja<- str_remove(populacja, "[_]")
+
+Dane<-cbind(Dane_nakrapianie, populacja)
+
+#Usuwanie przypadkow‚ z brakami danych, jesli sa, to odkomentować poniższą linijkę.
+#Dane<-na.omit(Dane)
+
+#policzenie sumy robaków dla każdej z populacji  z 10 zdjęć (osobno robaki nieswiecace, swiecace)
+suma_N<- Dane %>% 
+    group_by(populacja) %>% 
+    summarise(N = sum(N))
+
+suma_S<- Dane %>% 
+    group_by(populacja) %>% 
+    summarise(S = sum(S))
+
+#połaczenie dwoch tabel z wartościamy N i S
+sumy <- merge(suma_N, suma_S, by = "populacja")
+
+#dodanie łącznej sumy zwierząt
+sumy[,"sum"] <- sumy[,"N"] + sumy[,"S"]
+
+#dodanie proporcji
+sumy[,"propN_nakropiona"] <- sumy$N/sumy$sum
+
+#roznica miedzy 0.75 a otrzymanym
+sumy[,"roznica_nakropien"] <- sumy$propN_nakropiona - 0.50
+
+#powyzsze dane były robione na nasz własny użytek, do koncowych analiz potrzebe bedzie jedynie: populacja oraz propN_nakropiona
+
+sumy_okrojone <- sumy[,-c(2,3,4,6)]
+
+# Dane sa gotowe do dalszych analiz. Pozostaje zapisac je do pliku:
+#(wpisujac taka nazwe, jaka chcemy)
+write.csv(sumy_okrojone, "Dane_nakropienia_blok2_cz1.csv", quote=F, sep=",", row.names=F, col.names = T)
+```
+
+Wykres różnicy nakropień
+```{r, echo=F}
+#wykresy
+wykres_roznica <- ggplot(data=sumy,aes(x=populacja, y=roznica_nakropien)) +
+    geom_point()+
+    #geom_jitter(width=0.3, aes(colour = pokolenie))+
+    theme_classic()+
+    geom_smooth(method = lm,se = F)+
+    ylim( -0.5, 0.4)+ 
+    geom_hline(yintercept = 0.0)
+wykres_roznica
+
+ggsave("roznica_nakropien.png")
+
+wykres_sumy <- ggplot(data=sumy,aes(x=sum, y=roznica_nakropien)) +
+    geom_point()+
+    #geom_jitter(width=0.3, aes(colour = pokolenie))+
+    theme_classic()+
+    geom_smooth(method = lm,se = F)+
+    ylim( -0.4, 0.4)+ 
+    geom_hline(yintercept = 0.0)
+wykres_sumy
+ggsave("roznica_od_sum.png")
+```
+
+
+Import danych z fitnessem
+```{r, include=FALSE}
+#1. ustawiamy srodowisko pracy w miejsce wktorym przechowywujemy pliki z naszymi danymi
+#wazne! plik z danymi fitnessowymi, danymi z nakrapiania jak i kody musza znajdowac sie w jednym miejscu, 
+#jesli tak nie jest nalezy podczaj kroku z importem podac cala sciezke do naszych danych
+#setwd("C:/Users/joann/Desktop/doktorat/eksperyment_fitness_nowy/blok1_powtórzenie_04.01.2020/fitness")
+
+#2. odczytujemy pliki
+#plik z danymi z nakrapania
+#uwaga, w zależności od kodowania mozna uczyc read.csv() lub read.csv2(), rowniez mozna uzyc funkcji read.table()
+dane_nakropienia<- sumy_okrojone
+
+#dane fitnessowe
+dane_fitness<- read.csv("licznosci_klas_fitness_cz1.csv")
+
+#szybkie sprzątanie wgranego pliku z niepotrzebnej komumny
+dane_fitness<- dane_fitness[,-1]
+
+#plik z kodami
+kody <- read.csv2("kody_blok2_cz1.csv")
+#moj komputer zmienia nazwe pierwszej kolumny, i dodaje wiersze, ktore nie są potrzebne
+#wiec musze ja poprawic, jesli macie problemy to odkomentujcie
+#kody<-kody[,c(1:5)]
+colnames(kody)[colnames(kody)=='ď.żpopulacja'] <- 'populacja'
+
+#3. nastepnie musimy zsumowac dane dla wynikow fitnessowych
+#3.1 aby to zrobic musimy wydobyc z nazwy pliku kod populacji
+kod<-sapply(dane_fitness[,"nazwa.pliku"],substr,start=1,stop=3)
+dane_fitness<-cbind(dane_fitness, kod)
+
+#teraz mozemy zsumowac wyniki z 10 zdjec dla konkretnego kodu
+suma_N<- dane_fitness %>% 
+  group_by(kod) %>% 
+  summarise(N = sum(N))
+
+suma_S<- dane_fitness %>% 
+  group_by(kod) %>% 
+  summarise(S = sum(S))
+
+#połączenie dwóch tabel
+sumy_fitness <- merge(suma_N, suma_S, by = "kod")
+
+#dodanie sumy zwierząt
+sumy_fitness[,"sum"] <- sumy_fitness[,"N"] + sumy_fitness[,"S"]
+
+#dodanie proporcji
+sumy_fitness[,"propN_fitness"] <- sumy_fitness$N/sumy_fitness$sum
+
+#4. rozkodowanie danych 
+calosc_fitness <- merge(kody, sumy_fitness, by = "kod")
+
+#5. uwzglednienie roznic w nakrapianiu
+dane <- merge(calosc_fitness, dane_nakropienia, by = "populacja")
+
+#usuwanie niepotrzebnych kolumn
+dane <- dane[,-c(2, 3, 4, 5)]
+
+#6.obliczanie koncowego fitnessu -uwzglednianie roznic w nakrapianiu
+
+dane[,"propN"] <- dane$propN_fitness-dane$propN_nakropiona
+
+#dodanie typu
+typ <- read.csv2("typ.csv")
+
+dane <- merge(typ, dane, by = "populacja")
+
+#7. zapisywanie danych
+write.csv2(dane, "wyniki_blok2_cz1.csv")
+```
+
+Tabela z danymi po rozkodowaniu i uwzględnieniu różnic w nakropieniu
+
+```{r}
+head(dane)
+```
+
+Dodanie do tabeli kolumny z temperaturą, pokoleniem i podwajamy dane dla ancestralnych
+```{r, include=F}
+#dodajeny na początek populacji ancestralnych anc, żeby pojawiały się na początku wykresu
+
+dane$populacja <- as.character(dane$populacja)
+dane$populacja[dane$populacja == "FOG8"] <- "ancFOG8"
+dane$populacja[dane$populacja == "WT8"] <- "ancWT8"
+
+
+dane_temp<-dane %>%
+  mutate(temperatura = case_when(
+    startsWith(populacja, "E") ~ "24",
+    startsWith(populacja, "K") ~ "20",
+    startsWith(populacja,"anc") ~ "20" 
+    ))
+
+#zdublowanie ancestralnych z przpisaniem roznych temperatur
+
+dbld<- dane_temp %>% filter(grepl("anc",dane_temp$populacja)) %>% mutate(temperatura = "24")
+dane_doubled <- rbind(dane_temp, dbld)
+
+#uzupełnianie tych wierszy temperaturami
+#zmiana miejsca konkretnych wierszy
+dane_doubled<-arrange(dane_doubled, typ)
+dane_doubled<- dane_doubled %>% fill(temperatura)
+#dane_doubled[65:68, "temperatura"] <- 24
+
+#dodanie kolumny z pokoleniem
+dane_doubled<-dane_doubled %>%
+  mutate(pokolenie = case_when(
+    startsWith(populacja, "E") ~ "ew",
+    startsWith(populacja, "K") ~ "ew",
+    startsWith(populacja, "anc") ~ "anc"
+    ))
+dane_doubled$pokolenie <- as.factor(dane_doubled$pokolenie)
+```
+
+Wykres w zaleznosci od typu i temperatury
+
+```{r, echo=T}
+wykres_typ <- ggplot(data=dane_doubled, aes(x=populacja, y=propN, colour = pokolenie)) +
+  facet_wrap(~typ + temperatura, scales = "free")+
+  geom_jitter(width =0.2)+
+  geom_boxplot()+
+  theme_classic()+
+  ylim(-0.6, 0.6)+
+  scale_colour_manual(values =c("red", "grey"))
+
+wykres_typ
+
+#ggsave('blok1_temp_typ.jpg', width = 10, height = 10)
+```
+
+
+Analiza lm z uwzglednieniem typu reproducyjnego
+
+Dla fogów
+```{r, echo = F}
+#dla fogow
+model_fog <- lm(propN ~ populacja, data = subset(dane, typ == 'FOG'))
+par(mfrow=c(2,2))
+plot(model_fog)
+model_fog
+summary(model_fog)
+```
+
+
+Dla typu dzikiego
+```{r, echo=F}
+model_wt <- lm(propN ~ populacja, data = subset(dane, typ == 'WT'))
+par(mfrow=c(2,2))
+plot(model_wt)
+model_wt
+summary(model_wt)
+```
+
